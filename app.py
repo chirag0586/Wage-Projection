@@ -298,7 +298,7 @@ print("Debugging function created. This should be added to the original app code
 print("Call this function after loading all data files but before running the main calculations.")
 print("It will provide detailed breakdown of Pre-Sales department costs for February through July.")
 
-
+debug_presales_calculations(employee_data, exits_data, pip_data, requisitions_data)
 
 
 # Main app title
