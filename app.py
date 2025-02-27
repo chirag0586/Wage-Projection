@@ -72,9 +72,7 @@ if st.button("Run Wage Projection"):
         monthly_table = pd.DataFrame(index=departments, columns=months, data=np.random.randint(500000, 10000000, size=(len(departments), len(months))))
         quarterly_table = pd.DataFrame(index=departments, columns=quarters, data=np.random.randint(2000000, 40000000, size=(len(departments), len(quarters))))
         
-        # Add Total row
-        monthly_table.loc['Total'] = monthly_table.sum()
-        quarterly_table.loc['Total'] = quarterly_table.sum()
+       
         
         # Format Numbers
         monthly_table = monthly_table.applymap(format_indian_number)
@@ -82,7 +80,5 @@ if st.button("Run Wage Projection"):
         
         # Display tables
         st.subheader("Monthly Wage Cost Projection")
-        st.table(monthly_table.style.set_properties(subset=['Total'], **{'font-weight': 'bold'}))
         
         st.subheader("Quarterly Wage Cost Projection")
-        st.table(quarterly_table.style.set_properties(subset=['Total'], **{'font-weight': 'bold'}))
