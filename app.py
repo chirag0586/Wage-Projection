@@ -133,8 +133,11 @@ if process_button:
         month_cost = 0
         explanation = f"### Wage Cost Calculation for {projection_months[idx]}\n\n"
         
+        # Generate a list of employee IDs to exclude (those in exit or PIP lists)
+        employees_to_exclude = set(presales_exited['employee_id'].tolist() + presales_pip['employee_id'].tolist())
+        
         # 1. Regular employees (exclude those in exit or PIP lists)
-        active_employees = presales_employees[~presales_employees['employee_id'].isin(presales_exited['employee_id'].tolist() + presales_pip['employee_id'].tolist())]
+        active_employees = presales_employees[~presales_employees['employee_id'].isin(employees_to_exclude)]
         
         # Calculate cost for regular employees for the full month
         regular_cost = active_employees['Monthly_Salary'].sum() * 100000  # Convert lakhs to INR
@@ -150,27 +153,47 @@ if process_button:
         
         if not presales_exited.empty:
             for _, emp in presales_exited.iterrows():
-                # Skip if already exited before the projection month
+                # CORRECTION: Handle both exit_date and expected_exit_date
+                
+                # If employee has already exited before the projection month, skip
                 if pd.notna(emp['exit_date']) and emp['exit_date'] < projection_date:
                     continue
                 
-                # If employee has an expected exit date in this month
-                if pd.notna(emp['expected_exit_date']) and emp['expected_exit_date'].year == projection_date.year and emp['expected_exit_date'].month == projection_date.month:
+                # Case 1: Employee has an actual exit_date in this month
+                if pd.notna(emp['exit_date']) and emp['exit_date'].year == projection_date.year and emp['exit_date'].month == projection_date.month:
+                    # Calculate pro-rated cost based on days worked in this month
+                    days_worked = emp['exit_date'].day
+                    pro_rated_cost = (emp['Monthly_Salary'] * 100000) * (days_worked / days_in_month)
+                    month_cost += pro_rated_cost
+                    exiting_employees_cost += pro_rated_cost
+                    
+                    explanation += f"- Employee {emp['employee_id']} ({emp['full_name']}) works until {emp['exit_date'].strftime('%d %b %Y')} ({days_worked} days): ₹{format_indian_currency(pro_rated_cost)}\n"
+                
+                # Case 2: Employee has an expected_exit_date in this month
+                elif pd.notna(emp['expected_exit_date']) and emp['expected_exit_date'].year == projection_date.year and emp['expected_exit_date'].month == projection_date.month:
                     # Calculate pro-rated cost based on days worked in this month
                     days_worked = emp['expected_exit_date'].day
                     pro_rated_cost = (emp['Monthly_Salary'] * 100000) * (days_worked / days_in_month)
                     month_cost += pro_rated_cost
                     exiting_employees_cost += pro_rated_cost
                     
-                    explanation += f"- Employee {emp['employee_id']} ({emp['full_name']}) works until {emp['expected_exit_date'].strftime('%d %b %Y')} ({days_worked} days): ₹{format_indian_currency(pro_rated_cost)}\n"
+                    explanation += f"- Employee {emp['employee_id']} ({emp['full_name']}) (on notice) works until {emp['expected_exit_date'].strftime('%d %b %Y')} ({days_worked} days): ₹{format_indian_currency(pro_rated_cost)}\n"
                 
-                # If employee exits in a future month, add full salary for this month
-                elif pd.notna(emp['expected_exit_date']) and emp['expected_exit_date'] > month_end:
+                # Case 3: Employee has exit_date or expected_exit_date in future months
+                elif (pd.notna(emp['exit_date']) and emp['exit_date'] > month_end) or (pd.notna(emp['expected_exit_date']) and emp['expected_exit_date'] > month_end):
                     full_cost = emp['Monthly_Salary'] * 100000
                     month_cost += full_cost
                     exiting_employees_cost += full_cost
                     
                     explanation += f"- Employee {emp['employee_id']} ({emp['full_name']}) works full month: ₹{format_indian_currency(full_cost)}\n"
+                
+                # Case 4: Employee has no exit dates set but is in the exit list
+                elif pd.isna(emp['exit_date']) and pd.isna(emp['expected_exit_date']):
+                    full_cost = emp['Monthly_Salary'] * 100000
+                    month_cost += full_cost
+                    exiting_employees_cost += full_cost
+                    
+                    explanation += f"- Employee {emp['employee_id']} ({emp['full_name']}) (on exit list but no date set) works full month: ₹{format_indian_currency(full_cost)}\n"
         
         if exiting_employees_cost == 0:
             explanation += "- No exiting employees for this month.\n"
