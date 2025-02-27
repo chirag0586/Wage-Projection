@@ -28,7 +28,7 @@ def format_indian_currency(number):
 
 # Create title and description
 st.title("Wage Cost Projection Tool")
-st.markdown("Upload Excel files to generate wage cost projections for the Pre-Sales department.")
+st.markdown("Upload Excel files to generate wage cost projections by department.")
 
 # Create file upload section with two rows
 col1, col2 = st.columns(2)
@@ -48,31 +48,43 @@ all_files_uploaded = employees_file and exited_employees_file and pip_employees_
 
 if all_files_uploaded:
     st.success("All files uploaded successfully!")
-    process_button = st.button("Generate Wage Cost Projections")
+    
+    # Load the data to get departments for dropdown
+    employees_df = pd.read_excel(employees_file)
+    
+    # Get unique departments for the dropdown
+    departments = sorted(employees_df['Department'].unique().tolist())
+    
+    # Department selection
+    selected_department = st.selectbox(
+        "Select Department for Wage Cost Projection:",
+        departments,
+        index=departments.index('Pre-Sales') if 'Pre-Sales' in departments else 0
+    )
+    
+    process_button = st.button(f"Generate Wage Cost Projections for {selected_department}")
 else:
     st.info("Please upload all required files to proceed.")
     process_button = False
+    selected_department = None
 
 # Processing section
-if process_button:
-    st.subheader("Processing Data...")
+if process_button and selected_department:
+    st.subheader(f"Processing Data for {selected_department} Department...")
     
-    # Load data from Excel files
-    with st.spinner("Loading employee data..."):
-        employees_df = pd.read_excel(employees_file)
-        st.session_state['employees_df'] = employees_df
-        
+    # Load data from Excel files if not already loaded
+    if 'employees_df' not in locals():
+        with st.spinner("Loading employee data..."):
+            employees_df = pd.read_excel(employees_file)
+            
     with st.spinner("Loading exit data..."):
         exited_df = pd.read_excel(exited_employees_file)
-        st.session_state['exited_df'] = exited_df
         
     with st.spinner("Loading PIP data..."):
         pip_df = pd.read_excel(pip_employees_file)
-        st.session_state['pip_df'] = pip_df
         
     with st.spinner("Loading requisitions..."):
         req_df = pd.read_excel(requisitions_file)
-        st.session_state['req_df'] = req_df
 
     # Data preprocessing
     with st.spinner("Preprocessing data..."):
@@ -114,11 +126,11 @@ if process_button:
         projection_months.append(month_name)
         projection_dates.append(month_date)
     
-    # Filter data for Pre-Sales department only
-    presales_employees = employees_df[employees_df['Department'] == 'Pre-Sales'].copy()
-    presales_exited = exited_df[exited_df['Department'] == 'Pre-Sales'].copy()
-    presales_pip = pip_df[pip_df['Department'] == 'Pre-Sales'].copy()
-    presales_req = req_df[req_df['Department'] == 'Pre-Sales'].copy()
+    # Filter data for selected department only
+    dept_employees = employees_df[employees_df['Department'] == selected_department].copy()
+    dept_exited = exited_df[exited_df['Department'] == selected_department].copy()
+    dept_pip = pip_df[pip_df['Department'] == selected_department].copy()
+    dept_req = req_df[req_df['Department'] == selected_department].copy()
     
     # Calculate monthly costs for each projection month
     monthly_costs = []
@@ -134,10 +146,10 @@ if process_button:
         explanation = f"### Wage Cost Calculation for {projection_months[idx]}\n\n"
         
         # Generate a list of employee IDs to exclude (those in exit or PIP lists)
-        employees_to_exclude = set(presales_exited['employee_id'].tolist() + presales_pip['employee_id'].tolist())
+        employees_to_exclude = set(dept_exited['employee_id'].tolist() + dept_pip['employee_id'].tolist())
         
         # 1. Regular employees (exclude those in exit or PIP lists)
-        active_employees = presales_employees[~presales_employees['employee_id'].isin(employees_to_exclude)]
+        active_employees = dept_employees[~dept_employees['employee_id'].isin(employees_to_exclude)]
         
         # Calculate cost for regular employees for the full month
         regular_cost = active_employees['Monthly_Salary'].sum() * 100000  # Convert lakhs to INR
@@ -151,9 +163,9 @@ if process_button:
         exiting_employees_cost = 0
         explanation += "**Exiting Employees (Pro-rated costs):**\n\n"
         
-        if not presales_exited.empty:
-            for _, emp in presales_exited.iterrows():
-                # CORRECTION: Handle both exit_date and expected_exit_date
+        if not dept_exited.empty:
+            for _, emp in dept_exited.iterrows():
+                # Handle both exit_date and expected_exit_date
                 
                 # If employee has already exited before the projection month, skip
                 if pd.notna(emp['exit_date']) and emp['exit_date'] < projection_date:
@@ -204,8 +216,8 @@ if process_button:
         pip_employees_cost = 0
         explanation += "**PIP Employees (Pro-rated costs):**\n\n"
         
-        if not presales_pip.empty:
-            for _, emp in presales_pip.iterrows():
+        if not dept_pip.empty:
+            for _, emp in dept_pip.iterrows():
                 # Calculate expected exit date (60 days after PIP start)
                 if pd.isna(emp['pip_start_date']):
                     continue
@@ -243,8 +255,8 @@ if process_button:
         new_hires_cost = 0
         explanation += "**New Hires (Pro-rated costs):**\n\n"
         
-        if not presales_req.empty:
-            for _, req in presales_req.iterrows():
+        if not dept_req.empty:
+            for _, req in dept_req.iterrows():
                 # Consider only if joining date is set and status is not 'filled'
                 if pd.isna(req['target_joining_date']) or req['status'].lower() == 'filled':
                     continue
@@ -279,7 +291,7 @@ if process_button:
         monthly_explanations.append(explanation)
     
     # Display results
-    st.header("Pre-Sales Department Monthly Wage Cost Projection")
+    st.header(f"{selected_department} Department Monthly Wage Cost Projection")
     
     # Create a DataFrame for the projection
     projection_df = pd.DataFrame({
