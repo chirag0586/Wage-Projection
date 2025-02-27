@@ -93,6 +93,12 @@ def get_month_year(date):
         date = pd.to_datetime(date)
     return date.strftime("%b %Y")
 
+
+
+
+
+
+
 # Function to download dataframe as Excel
 def download_excel(df, filename):
     output = io.BytesIO()
@@ -102,6 +108,198 @@ def download_excel(df, filename):
     b64 = base64.b64encode(output.getvalue()).decode()
     href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}">Download Excel file</a>'
     return href
+
+
+
+
+# Create a debugging function to calculate pre-sales department costs
+# This code should be added to the original app after data loading but before the main calculations
+
+def debug_presales_calculations(employee_data, exits_data, pip_data, requisitions_data):
+    """
+    Debug function to show detailed calculations for Pre-Sales department
+    for the months of February through July.
+    """
+    import pandas as pd
+    from datetime import datetime, timedelta
+    import calendar
+    
+    # Define the months we want to analyze
+    months_to_analyze = {
+        2: 'February',
+        3: 'March', 
+        4: 'April',
+        5: 'May',
+        6: 'June',
+        7: 'July'
+    }
+    
+    # Current year (2025 based on the app description)
+    current_year = 2025
+    
+    # Filter for Pre-Sales department employees
+    presales_employees = employee_data[employee_data['Department'] == 'Pre-Sales'].copy()
+    presales_exits = exits_data[exits_data['Department'] == 'Pre-Sales'].copy()
+    presales_pip = pip_data[pip_data['Department'] == 'Pre-Sales'].copy()
+    presales_reqs = requisitions_data[requisitions_data['Department'] == 'Pre-Sales'].copy()
+    
+    print(f"Debug Analysis for Pre-Sales Department (February-July {current_year})")
+    print("-" * 80)
+    
+    # Print basic stats
+    print(f"Total Pre-Sales employees: {len(presales_employees)}")
+    print(f"Pre-Sales employees exiting: {len(presales_exits)}")
+    print(f"Pre-Sales employees on PIP: {len(presales_pip)}")
+    print(f"Pre-Sales open requisitions: {len(presales_reqs)}")
+    print("-" * 80)
+    
+    # For each month, calculate the detailed breakdown
+    for month_num, month_name in months_to_analyze.items():
+        print(f"\
+{month_name} {current_year} Calculation Details:")
+        print("-" * 50)
+        
+        # Calculate days in the month
+        days_in_month = calendar.monthrange(current_year, month_num)[1]
+        month_start = datetime(current_year, month_num, 1)
+        month_end = datetime(current_year, month_num, days_in_month)
+        
+        # Track total cost for the month
+        total_month_cost = 0
+        
+        # 1. Regular employees (not exiting, not on PIP)
+        regular_employees = presales_employees.copy()
+        
+        # Remove employees who are in exits_data or pip_data
+        if not presales_exits.empty:
+            regular_employees = regular_employees[~regular_employees['employee_id'].isin(presales_exits['employee_id'])]
+        
+        if not presales_pip.empty:
+            regular_employees = regular_employees[~regular_employees['employee_id'].isin(presales_pip['employee_id'])]
+        
+        regular_cost = regular_employees['Monthly_Salary'].sum()
+        total_month_cost += regular_cost
+        
+        print(f"Regular employees ({len(regular_employees)}):")
+        for _, emp in regular_employees.iterrows():
+            print(f"  - {emp['full_name']}: Full month ({days_in_month} days) = ₹{emp['Monthly_Salary']:,.2f}")
+        
+        # 2. Exiting employees (pro-rated based on exit date)
+        if not presales_exits.empty:
+            print(f"\
+Exiting employees ({len(presales_exits)}):")
+            exit_cost = 0
+            
+            for _, emp in presales_exits.iterrows():
+                # Determine the actual exit date
+                if pd.notna(emp['exit_date']):
+                    exit_date = pd.to_datetime(emp['exit_date'])
+                elif pd.notna(emp['expected_exit_date']):
+                    exit_date = pd.to_datetime(emp['expected_exit_date'])
+                else:
+                    # If no exit date is specified, assume they're staying the full month
+                    exit_date = month_end + timedelta(days=1)
+                
+                # Calculate days worked in this month
+                if exit_date <= month_start:
+                    # Already exited before this month
+                    days_worked = 0
+                elif exit_date >= month_end:
+                    # Exiting after this month ends
+                    days_worked = days_in_month
+                else:
+                    # Exiting during this month
+                    days_worked = (exit_date - month_start).days + 1
+                
+                # Calculate pro-rated salary
+                if days_worked > 0:
+                    prorated_salary = emp['Monthly_Salary'] * (days_worked / days_in_month)
+                    exit_cost += prorated_salary
+                    print(f"  - {emp['full_name']}: {days_worked}/{days_in_month} days = ₹{prorated_salary:,.2f}")
+                    print(f"    (Exit date: {exit_date.strftime('%Y-%m-%d')})")
+                else:
+                    print(f"  - {emp['full_name']}: Already exited before {month_name}")
+            
+            total_month_cost += exit_cost
+        
+        # 3. PIP employees (assuming Scenario 1: all exit after 60 days)
+        if not presales_pip.empty:
+            print(f"\
+PIP employees ({len(presales_pip)}):")
+            pip_cost = 0
+            
+            for _, emp in presales_pip.iterrows():
+                pip_start = pd.to_datetime(emp['pip_start_date'])
+                expected_exit = pip_start + timedelta(days=60)  # Scenario 1: All exit after 60 days
+                
+                # Calculate days worked in this month
+                if expected_exit <= month_start:
+                    # Already exited before this month
+                    days_worked = 0
+                elif expected_exit >= month_end:
+                    # Exiting after this month ends
+                    days_worked = days_in_month
+                else:
+                    # Exiting during this month
+                    days_worked = (expected_exit - month_start).days + 1
+                
+                # Calculate pro-rated salary
+                if days_worked > 0:
+                    prorated_salary = emp['Monthly_Salary'] * (days_worked / days_in_month)
+                    pip_cost += prorated_salary
+                    print(f"  - {emp['full_name']}: {days_worked}/{days_in_month} days = ₹{prorated_salary:,.2f}")
+                    print(f"    (PIP start: {pip_start.strftime('%Y-%m-%d')}, Expected exit: {expected_exit.strftime('%Y-%m-%d')})")
+                else:
+                    print(f"  - {emp['full_name']}: Already exited before {month_name} due to PIP")
+            
+            total_month_cost += pip_cost
+        
+        # 4. New hires from open requisitions
+        if not presales_reqs.empty:
+            print(f"\
+Expected new hires ({len(presales_reqs)}):")
+            new_hire_cost = 0
+            
+            for _, req in presales_reqs.iterrows():
+                joining_date = pd.to_datetime(req['target_joining_date'])
+                
+                # Calculate days worked in this month
+                if joining_date > month_end:
+                    # Joining after this month
+                    days_worked = 0
+                elif joining_date <= month_start:
+                    # Joined before or at the start of this month
+                    days_worked = days_in_month
+                else:
+                    # Joining during this month
+                    days_worked = (month_end - joining_date).days + 1
+                
+                # Calculate pro-rated salary
+                if days_worked > 0:
+                    prorated_salary = req['Expected_Monthly_Salary'] * (days_worked / days_in_month)
+                    new_hire_cost += prorated_salary
+                    print(f"  - Req #{req['requisition_id']} ({req['position']}): {days_worked}/{days_in_month} days = ₹{prorated_salary:,.2f}")
+                    print(f"    (Expected joining: {joining_date.strftime('%Y-%m-%d')})")
+                else:
+                    print(f"  - Req #{req['requisition_id']} ({req['position']}): Not joining in {month_name}")
+            
+            total_month_cost += new_hire_cost
+        
+        print(f"\
+Total Pre-Sales cost for {month_name} {current_year}: ₹{total_month_cost:,.2f}")
+    
+    return "Debugging complete"
+
+# Note: This function should be called after loading all the data files
+# Add this line after data loading in the original code:
+# debug_presales_calculations(employee_data, exits_data, pip_data, requisitions_data)
+
+print("Debugging function created. This should be added to the original app code.")
+print("Call this function after loading all data files but before running the main calculations.")
+print("It will provide detailed breakdown of Pre-Sales department costs for February through July.")
+
+
+
 
 # Main app title
 st.title("Wage Cost Projection App")
